@@ -42,6 +42,8 @@ def is_ip_literal(host: str) -> bool:
 
 def is_domain_allowed(host: str) -> bool:
     host = host.lower()
+    if host.startswith("."):
+        return False
     for allowed in settings.ALLOWLIST_DOMAINS:
         allowed = allowed.lower()
         if host == allowed or host.endswith("." + allowed):
@@ -98,8 +100,9 @@ def validate_and_sanitize_url(url: str) -> str:
             retryable=False,
         )
 
+    unquoted_path = urllib.parse.unquote(parsed.path)
     for pattern in DISALLOWED_PATH_PATTERNS:
-        if pattern.search(parsed.path):
+        if pattern.search(unquoted_path):
             raise AppException(
                 400,
                 ErrorCode.UNSUPPORTED_PLAYLIST,
@@ -108,7 +111,7 @@ def validate_and_sanitize_url(url: str) -> str:
             )
 
     query_params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    cleaned_params = [(k, v) for k, v in query_params if k.lower() not in TRACKING_PARAMS]
+    cleaned_params = [(k, v) for k, v in query_params if k.lower() not in TRACKING_PARAMS and not k.lower().startswith("utm_")]
     new_query = urllib.parse.urlencode(cleaned_params)
 
     sanitized = urllib.parse.urlunsplit(

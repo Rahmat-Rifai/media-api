@@ -71,5 +71,20 @@ class TestValidator(unittest.TestCase):
         sanitized = validate_and_sanitize_url(url)
         self.assertEqual(sanitized, "https://soundcloud.com/artist/track?legit_param=keepme")
 
+
+    def test_encoded_playlist_and_leading_dot(self):
+        with self.assertRaises(AppException) as ctx:
+            validate_and_sanitize_url("https://soundcloud.com/artist/%73%65%74%73/my-playlist")
+        self.assertEqual(ctx.exception.code, ErrorCode.UNSUPPORTED_PLAYLIST)
+
+        with self.assertRaises(AppException) as ctx:
+            validate_and_sanitize_url("https://.soundcloud.com/track")
+        self.assertEqual(ctx.exception.code, ErrorCode.UNSUPPORTED_PLATFORM)
+
+    def test_utm_wildcard_stripping(self):
+        url = "https://soundcloud.com/artist/track?utm_custom_id=xyz&keep_me=1"
+        sanitized = validate_and_sanitize_url(url)
+        self.assertEqual(sanitized, "https://soundcloud.com/artist/track?keep_me=1")
+
 if __name__ == "__main__":
     unittest.main()
