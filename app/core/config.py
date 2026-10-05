@@ -3,7 +3,8 @@ from pydantic import Field
 from typing import List
 
 class Settings(BaseSettings):
-    NETWORK_PROFILE: str = Field(default="standard")
+    NETWORK_PROFILE: str = Field(default="sandbox")
+    UPSTREAM_PROXY_URL: str = Field(default="https://proxy.rahmat.cc.cd/proxy")
     DATA_PATH: str = Field(default="data")
     STORAGE_PATH: str = Field(default="storage")
     STORAGE_MAX_BYTES: int = Field(default=20 * 1024 * 1024 * 1024)

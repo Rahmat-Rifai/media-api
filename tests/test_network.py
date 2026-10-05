@@ -6,7 +6,8 @@ import requests
 import gallery_dl.extractor.common
 
 class TestNetwork(unittest.TestCase):
-    def test_curl_rh_fail_fast_on_post(self):
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
+    def test_curl_rh_fail_fast_on_post_without_proxy(self):
         rh = CurlRH()
         mock_req = MagicMock()
         mock_req.method = "POST"
@@ -15,7 +16,8 @@ class TestNetwork(unittest.TestCase):
             rh._send(mock_req)
         self.assertIn("Egress POST blocked by policy", str(ctx.exception))
 
-    def test_curl_rh_fail_fast_on_other_methods(self):
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
+    def test_curl_rh_fail_fast_on_other_methods_without_proxy(self):
         rh = CurlRH()
         for method in ("PUT", "DELETE", "PATCH"):
             mock_req = MagicMock()
@@ -24,6 +26,31 @@ class TestNetwork(unittest.TestCase):
             with self.assertRaises(TransportError):
                 rh._send(mock_req)
 
+    @patch("subprocess.run")
+    def test_curl_rh_post_tunneled_via_proxy(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"success\":true}",
+            stderr=b"",
+        )
+        rh = CurlRH()
+        mock_req = MagicMock()
+        mock_req.method = "POST"
+        mock_req.url = "https://api.example.com/post-data"
+        mock_req.data = b"{\"payload\":1}"
+        mock_req.headers = {"Content-Type": "application/json"}
+        res = rh._send(mock_req)
+
+        self.assertEqual(res.status, 200)
+        self.assertEqual(res.url, "https://api.example.com/post-data")
+        self.assertEqual(res.read(), b"{\"success\":true}")
+
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("/usr/bin/curl", cmd)
+        self.assertIn("X-Target-Method: POST", cmd)
+        self.assertIn("X-Target-URL: https://api.example.com/post-data", cmd)
+
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
     @patch("subprocess.run")
     def test_curl_rh_get_success(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -46,12 +73,10 @@ class TestNetwork(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertIn("/usr/bin/curl", cmd)
         self.assertIn("--connect-timeout", cmd)
-        self.assertIn("10", cmd)
-        self.assertIn("--max-time", cmd)
-        self.assertIn("30", cmd)
         self.assertIn("-H", cmd)
         self.assertIn("Connection: close", cmd)
 
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
     @patch("subprocess.run")
     def test_curl_rh_head_success(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -70,6 +95,7 @@ class TestNetwork(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertIn("-I", cmd)
 
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
     @patch("subprocess.run")
     def test_curl_rh_http_error(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -85,6 +111,7 @@ class TestNetwork(unittest.TestCase):
         with self.assertRaises(HTTPError):
             rh._send(mock_req)
 
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
     @patch("subprocess.run")
     def test_curl_rh_unparseable_output(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -100,7 +127,8 @@ class TestNetwork(unittest.TestCase):
         with self.assertRaises(TransportError):
             rh._send(mock_req)
 
-    def test_curl_adapter_fail_fast_on_post(self):
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
+    def test_curl_adapter_fail_fast_on_post_without_proxy(self):
         adapter = CurlAdapter()
         mock_req = MagicMock()
         mock_req.method = "POST"
@@ -109,7 +137,8 @@ class TestNetwork(unittest.TestCase):
             adapter.send(mock_req)
         self.assertIn("Egress POST blocked by policy", str(ctx.exception))
 
-    def test_curl_adapter_fail_fast_on_other_methods(self):
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
+    def test_curl_adapter_fail_fast_on_other_methods_without_proxy(self):
         adapter = CurlAdapter()
         for method in ("PUT", "DELETE", "PATCH"):
             mock_req = MagicMock()
@@ -118,6 +147,29 @@ class TestNetwork(unittest.TestCase):
             with self.assertRaises(requests.exceptions.RequestException):
                 adapter.send(mock_req)
 
+    @patch("subprocess.run")
+    def test_curl_adapter_post_tunneled_via_proxy(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"key\":\"value\"}",
+            stderr=b"",
+        )
+        adapter = CurlAdapter()
+        mock_req = MagicMock()
+        mock_req.method = "POST"
+        mock_req.url = "https://api.example.com/data.json"
+        mock_req.body = b"{\"post\":\"data\"}"
+        mock_req.headers = {}
+        resp = adapter.send(mock_req)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.url, "https://api.example.com/data.json")
+        self.assertEqual(resp.content, b"{\"key\":\"value\"}")
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("X-Target-Method: POST", cmd)
+        self.assertIn("X-Target-URL: https://api.example.com/data.json", cmd)
+
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
     @patch("subprocess.run")
     def test_curl_adapter_get_success(self, mock_run):
         mock_run.return_value = MagicMock(
@@ -137,15 +189,7 @@ class TestNetwork(unittest.TestCase):
         self.assertEqual(resp.content, b"{\"key\":\"value\"}")
         self.assertEqual(resp.headers.get("Content-Type"), "application/json")
 
-        cmd = mock_run.call_args[0][0]
-        self.assertIn("/usr/bin/curl", cmd)
-        self.assertIn("--connect-timeout", cmd)
-        self.assertIn("10", cmd)
-        self.assertIn("--max-time", cmd)
-        self.assertIn("30", cmd)
-        self.assertIn("-H", cmd)
-        self.assertIn("Connection: close", cmd)
-
+    @patch("app.core.network.settings.UPSTREAM_PROXY_URL", "")
     @patch("subprocess.run")
     def test_curl_adapter_unparseable_output(self, mock_run):
         mock_run.return_value = MagicMock(

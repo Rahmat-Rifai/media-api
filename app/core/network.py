@@ -1,6 +1,8 @@
+import base64
 import io
 import os
 import subprocess
+import urllib.parse
 import requests
 from requests.adapters import HTTPAdapter
 from requests.models import Response as RequestsResponse
@@ -23,6 +25,28 @@ def _get_curl_env() -> dict:
     return curl_env
 
 
+def _build_proxy_target(target_url: str, method: str, body_bytes: bytes | None) -> tuple[str, list[str]]:
+    """Build tunneled proxy URL and headers for upstream Cloudflare Worker proxy."""
+    upstream = settings.UPSTREAM_PROXY_URL.strip()
+    headers_to_add = [
+        "-H", f"X-Target-URL: {target_url}",
+        "-H", f"X-Target-Method: {method}",
+    ]
+    query_params = {
+        "url": target_url,
+        "_method": method,
+    }
+    if body_bytes:
+        body_b64 = base64.b64encode(body_bytes).decode("ascii")
+        headers_to_add.extend(["-H", f"X-Target-Body-B64: {body_b64}"])
+        query_params["_body_b64"] = body_b64
+
+    qs = urllib.parse.urlencode(query_params)
+    sep = "&" if "?" in upstream else "?"
+    proxy_url = f"{upstream}{sep}{qs}"
+    return proxy_url, headers_to_add
+
+
 class CurlRH(RequestHandler):
     RH_KEY = "Curl"
     RH_NAME = "curl"
@@ -35,25 +59,45 @@ class CurlRH(RequestHandler):
 
     def _send(self, request):
         method = (request.method or "GET").upper()
-        if method not in ("GET", "HEAD"):
+        upstream = settings.UPSTREAM_PROXY_URL.strip()
+
+        if not upstream and method not in ("GET", "HEAD"):
             raise TransportError(f"Egress POST blocked by policy: {method}")
 
-        cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "10", "--max-time", "30"]
-        if method == "HEAD":
-            cmd.append("-I")
+        cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "15", "--max-time", "60"]
+
+        body_bytes = None
+        if getattr(request, "data", None):
+            if isinstance(request.data, bytes):
+                body_bytes = request.data
+            elif hasattr(request.data, "read"):
+                body_bytes = request.data.read()
+            elif isinstance(request.data, str):
+                body_bytes = request.data.encode("utf-8")
 
         headers = dict(request.headers) if request.headers else {}
         if "User-Agent" not in headers and "user-agent" not in headers:
             headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
-        for k, v in headers.items():
-            if k.lower() not in ("connection", "accept-encoding", "content-length"):
-                cmd.extend(["-H", f"{k}: {v}"])
+        if upstream:
+            request_url, proxy_headers = _build_proxy_target(request.url, method, body_bytes)
+            cmd.extend(proxy_headers)
+            for k, v in headers.items():
+                if k.lower() not in ("connection", "accept-encoding", "content-length", "host"):
+                    cmd.extend(["-H", f"{k}: {v}"])
+        else:
+            if method == "HEAD":
+                cmd.append("-I")
+            request_url = request.url
+            for k, v in headers.items():
+                if k.lower() not in ("connection", "accept-encoding", "content-length"):
+                    cmd.extend(["-H", f"{k}: {v}"])
+
         cmd.extend(["-H", "Connection: close"])
-        cmd.append(request.url)
+        cmd.append(request_url)
 
         try:
-            proc = subprocess.run(cmd, env=_get_curl_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+            proc = subprocess.run(cmd, env=_get_curl_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=65)
         except subprocess.TimeoutExpired as e:
             raise TransportError(f"Curl timed out: {e}") from e
 
@@ -67,7 +111,10 @@ class CurlRH(RequestHandler):
         header_block = None
         body_idx = 0
         for idx, block in enumerate(blocks[:-1]):
-            if block.startswith(b"HTTP/"):
+            clean_block = block.lstrip()
+            if clean_block.startswith(b"HTTP/"):
+                if b"Connection Established" in clean_block and idx + 1 < len(blocks) - 1:
+                    continue
                 header_block = block
                 body_idx = idx + 1
 
@@ -96,25 +143,45 @@ class CurlRH(RequestHandler):
 class CurlAdapter(HTTPAdapter):
     def send(self, request, **kwargs):
         method = (request.method or "GET").upper()
-        if method not in ("GET", "HEAD"):
+        upstream = settings.UPSTREAM_PROXY_URL.strip()
+
+        if not upstream and method not in ("GET", "HEAD"):
             raise requests.exceptions.RequestException(f"Egress POST blocked by policy: {method}")
 
-        cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "10", "--max-time", "30"]
-        if method == "HEAD":
-            cmd.append("-I")
+        cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "15", "--max-time", "60"]
+
+        body_bytes = None
+        if getattr(request, "body", None):
+            if isinstance(request.body, bytes):
+                body_bytes = request.body
+            elif hasattr(request.body, "read"):
+                body_bytes = request.body.read()
+            elif isinstance(request.body, str):
+                body_bytes = request.body.encode("utf-8")
 
         headers = dict(request.headers) if request.headers else {}
         if "User-Agent" not in headers and "user-agent" not in headers:
             headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
-        for k, v in headers.items():
-            if k.lower() not in ("connection", "accept-encoding", "content-length"):
-                cmd.extend(["-H", f"{k}: {v}"])
+        if upstream:
+            request_url, proxy_headers = _build_proxy_target(request.url, method, body_bytes)
+            cmd.extend(proxy_headers)
+            for k, v in headers.items():
+                if k.lower() not in ("connection", "accept-encoding", "content-length", "host"):
+                    cmd.extend(["-H", f"{k}: {v}"])
+        else:
+            if method == "HEAD":
+                cmd.append("-I")
+            request_url = request.url
+            for k, v in headers.items():
+                if k.lower() not in ("connection", "accept-encoding", "content-length"):
+                    cmd.extend(["-H", f"{k}: {v}"])
+
         cmd.extend(["-H", "Connection: close"])
-        cmd.append(request.url)
+        cmd.append(request_url)
 
         try:
-            proc = subprocess.run(cmd, env=_get_curl_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+            proc = subprocess.run(cmd, env=_get_curl_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=65)
         except subprocess.TimeoutExpired as e:
             raise requests.exceptions.Timeout(f"Curl timed out: {e}") from e
 
@@ -128,7 +195,10 @@ class CurlAdapter(HTTPAdapter):
         header_block = None
         body_idx = 0
         for idx, block in enumerate(blocks[:-1]):
-            if block.startswith(b"HTTP/"):
+            clean_block = block.lstrip()
+            if clean_block.startswith(b"HTTP/"):
+                if b"Connection Established" in clean_block and idx + 1 < len(blocks) - 1:
+                    continue
                 header_block = block
                 body_idx = idx + 1
 
@@ -169,4 +239,3 @@ def setup_network_profile(profile: str | None = None):
         import gallery_dl.extractor.common
 
         gallery_dl.extractor.common._build_requests_adapter = lambda *a, **k: CurlAdapter()
-

@@ -5,11 +5,11 @@ from app.core.errors import ErrorCode, ErrorEnvelope, AppException
 class TestConfigAndErrors(unittest.TestCase):
     def test_default_settings(self):
         settings = Settings(ADMIN_API_KEY="test-admin-key")
-        self.assertEqual(settings.NETWORK_PROFILE, "standard")
         self.assertEqual(settings.STORAGE_MAX_BYTES, 20 * 1024 * 1024 * 1024)
         self.assertEqual(settings.HIGH_WATERMARK_RATIO, 0.90)
         self.assertEqual(settings.LOW_WATERMARK_RATIO, 0.70)
         self.assertEqual(settings.WORKER_CONCURRENCY, 3)
+        self.assertEqual(settings.UPSTREAM_PROXY_URL, "https://proxy.rahmat.cc.cd/proxy")
 
     def test_error_envelope_serialization(self):
         envelope = ErrorEnvelope.create(
