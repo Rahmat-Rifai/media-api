@@ -36,6 +36,45 @@ class WorkerService:
             return self.gallerydl_engine
         return self.ytdlp_engine
 
+    def _resolve_short_url(self, url: str) -> str:
+        """Resolve vt.tiktok.com / vm.tiktok.com short URLs via curl (tunneled).
+        Returns original URL if not a short domain or resolution fails."""
+        import subprocess
+        import urllib.parse
+        try:
+            host = (urllib.parse.urlsplit(url).hostname or "").lower()
+        except Exception:
+            return url
+        if host not in ("vt.tiktok.com", "vm.tiktok.com"):
+            return url
+        try:
+            # Use curl with proxy env (works through tunnel)
+            import os
+            env = {k: v for k, v in os.environ.items()}
+            proc = subprocess.run(
+                ["/usr/bin/curl", "-s", "-o", "/dev/null", "-w", "%{url_effective}",
+                 "-L", "--max-time", "20", "--connect-timeout", "10", url],
+                env=env, capture_output=True, timeout=25,
+            )
+            final = proc.stdout.decode().strip()
+            if final and final != url:
+                # Validate resolved domain is allowed
+                from app.core.validator import is_domain_allowed
+                fh = (urllib.parse.urlsplit(final).hostname or "").lower()
+                if is_domain_allowed(fh):
+                    return final
+        except Exception:
+            pass
+        return url
+
+    def _get_fallback_engine(self, url: str, error: Exception):
+        """Return gallery-dl as fallback for Instagram photo posts.
+        yt-dlp fails with 'No video formats found' for photos; gallery-dl handles them."""
+        err_str = str(error).lower()
+        if "instagram.com" in url and ("no video formats" in err_str or "empty media response" in err_str):
+            return self.gallerydl_engine
+        return None
+
     def cancel_task(self, task_id: str):
         if task_id in self.active_tasks:
             t = self.active_tasks[task_id]
@@ -50,10 +89,21 @@ class WorkerService:
                 return
 
             self.task_repo.update_status(task_id, "preparing")
-            engine = self._get_engine_for_url(task["url"])
+            # Resolve short URLs (vt.tiktok.com etc.) to full URLs first
+            task_url = self._resolve_short_url(task["url"])
+            engine = self._get_engine_for_url(task_url)
 
             try:
-                info = engine.extract_info(task["url"])
+                try:
+                    info = engine.extract_info(task_url)
+                except Exception as e:
+                    # Fallback: Instagram photo posts fail in yt-dlp; try gallery-dl
+                    fallback = self._get_fallback_engine(task_url, e)
+                    if fallback is not None:
+                        engine = fallback
+                        info = engine.extract_info(task_url)
+                    else:
+                        raise
                 est_bytes = info.get("estimated_bytes") or 5 * 1024 * 1024
                 reserved = int(est_bytes * 2.2)
 
@@ -63,7 +113,7 @@ class WorkerService:
 
                 tmp_dir = self.storage_mgr.get_tmp_dir(task_id)
                 files = engine.download(
-                    task["url"],
+                    task_url,
                     tmp_dir,
                     format_id=task.get("format_id"),
                     audio_only=bool(task.get("audio_only")),
