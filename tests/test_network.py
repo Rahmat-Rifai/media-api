@@ -169,9 +169,9 @@ class TestNetwork(unittest.TestCase):
         self.assertIsInstance(adapter, CurlAdapter)
 
     @patch("yt_dlp.networking.common.register_rh")
-    def test_setup_network_profile_default(self, mock_reg):
-        setup_network_profile()
-        mock_reg.assert_called_with(CurlRH)
+    def test_setup_network_profile_standard(self, mock_reg):
+        setup_network_profile("standard")
+        mock_reg.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()
