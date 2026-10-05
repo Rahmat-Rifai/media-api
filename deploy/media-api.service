@@ -1,0 +1,33 @@
+[Unit]
+Description=Media API Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=mediaapi
+Group=mediaapi
+WorkingDirectory=/home/mediaapi/media-api
+EnvironmentFile=/home/mediaapi/media-api/.env
+ExecStart=/home/mediaapi/media-api/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+
+# Security & Sandboxing
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/hatch/media-api/data /home/hatch/media-api/storage /home/mediaapi/.cache
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Resource Limits
+MemoryMax=1G
+CPUQuota=200%
+LimitNOFILE=65536
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

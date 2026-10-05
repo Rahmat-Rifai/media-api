@@ -29,12 +29,11 @@ class StorageManager:
     def get_file_path(self, filename: str) -> str:
         return os.path.join(self.files_base, filename)
 
-    def commit_file_atomically(self, task_id: str, src_filename: str, dst_filename: str) -> str:
-        src = os.path.join(self.get_tmp_dir(task_id), src_filename)
+    def commit_file_atomically(self, src_path: str, dst_filename: str) -> str:
         dst = os.path.join(self.files_base, dst_filename)
-        if not os.path.exists(src):
-            raise AppException(500, ErrorCode.INTERNAL_ERROR, f"Source file does not exist: {src}")
-        os.replace(src, dst)
+        if not os.path.exists(src_path):
+            raise AppException(500, ErrorCode.INTERNAL_ERROR, f"Source file does not exist: {src_path}")
+        os.replace(src_path, dst)
         return dst
 
     def get_dir_size(self, path: str) -> int:

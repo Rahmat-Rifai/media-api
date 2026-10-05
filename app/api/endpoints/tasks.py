@@ -19,7 +19,7 @@ class TaskCreateRequest(BaseModel):
 
 
 @router.post("/tasks", status_code=status.HTTP_202_ACCEPTED)
-def submit_task(
+async def submit_task(
     body: TaskCreateRequest,
     request: Request,
     client: dict = Depends(get_current_client),
@@ -98,7 +98,7 @@ def get_task_status(
 
 
 @router.delete("/tasks/{task_id}")
-def cancel_task(
+async def cancel_task(
     task_id: str,
     request: Request,
     client: dict = Depends(get_current_client),

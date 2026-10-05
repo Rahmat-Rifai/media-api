@@ -29,13 +29,13 @@ class TestStorageAndCleaner(unittest.TestCase):
         with open(test_file, "wb") as f:
             f.write(b"dummy audio content")
 
-        final_path = self.storage_mgr.commit_file_atomically(task_id, "source.mp3", "fl_final123.mp3")
+        final_path = self.storage_mgr.commit_file_atomically(test_file, "fl_final123.mp3")
         self.assertTrue(os.path.exists(final_path))
         self.assertFalse(os.path.exists(test_file))
 
     def test_atomic_file_commit_nonexistent_source(self):
         with self.assertRaises(AppException) as ctx:
-            self.storage_mgr.commit_file_atomically("tsk_nonexistent", "missing.mp3", "dst.mp3")
+            self.storage_mgr.commit_file_atomically("/nonexistent/missing.mp3", "dst.mp3")
         self.assertEqual(ctx.exception.code, ErrorCode.INTERNAL_ERROR)
 
     def test_cleaner_eviction(self):
@@ -71,11 +71,9 @@ class TestStorageAndCleaner(unittest.TestCase):
             low_watermark=1024,
             high_watermark=1500,
         )
-        # Total used is 1024, below high_watermark (1500), so standard cycle shouldn't evict unless forced or emergency
         stats = cleaner.run_eviction_cycle(force_emergency=False)
         self.assertEqual(stats["evicted_count"], 0)
 
-        # Force emergency eviction
         stats = cleaner.run_eviction_cycle(force_emergency=True)
         self.assertEqual(stats["evicted_count"], 1)
         self.assertFalse(os.path.exists(file_path))
@@ -98,10 +96,8 @@ class TestStorageAndCleaner(unittest.TestCase):
             low_watermark=500,
         )
 
-        # Reserve within capacity
         self.assertTrue(cleaner.reserve_space(500))
 
-        # Reserve exceeding max_bytes even with empty disk
         with self.assertRaises(AppException) as ctx:
             cleaner.reserve_space(1500)
         self.assertEqual(ctx.exception.code, ErrorCode.QUOTA_EXCEEDED)

@@ -1,0 +1,31 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Local configuration & secrets
+.env
+.env.local
+
+# Persistent storage & databases
+data/
+storage/
+*.db
+*.db-wal
+*.db-shm
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary directories & logs
+*.log
+.superpowers/
+

@@ -62,7 +62,7 @@ def get_db_path(custom_path: Optional[str] = None) -> str:
 
 def get_db_connection(custom_path: Optional[str] = None) -> sqlite3.Connection:
     path = get_db_path(custom_path)
-    conn = sqlite3.connect(path, timeout=5.0)
+    conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL;")
     conn.execute("PRAGMA busy_timeout = 5000;")

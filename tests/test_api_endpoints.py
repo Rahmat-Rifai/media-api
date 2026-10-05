@@ -9,6 +9,7 @@ from app.api.endpoints.tasks import router as tasks_router
 from app.api.endpoints.files import router as files_router
 from app.api.endpoints.admin import router as admin_router
 from app.api.deps import get_db
+from app.core.config import settings
 from app.db.database import init_db, get_db_connection
 from app.db.repositories import ClientRepository, TaskRepository, FileRepository
 
@@ -55,7 +56,7 @@ class TestApiEndpoints(unittest.TestCase):
     def test_admin_create_client(self):
         res = self.client_http.post(
             "/v1/admin/clients",
-            headers={"X-Admin-Key": "admin-secret-key"},
+            headers={"X-Admin-Key": settings.ADMIN_API_KEY},
             json={"name": "New Client", "daily_bytes_quota": 5000000},
         )
         self.assertEqual(res.status_code, 201)

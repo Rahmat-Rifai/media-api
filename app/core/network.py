@@ -1,4 +1,5 @@
 import io
+import os
 import subprocess
 import requests
 from requests.adapters import HTTPAdapter
@@ -10,6 +11,17 @@ import yt_dlp.networking.common
 from yt_dlp.networking.common import RequestHandler, Response as YtDlpResponse, register_rh, Features
 from yt_dlp.networking.exceptions import HTTPError, TransportError
 from app.core.config import settings
+
+
+def _get_curl_env() -> dict:
+    curl_env = dict(os.environ)
+    if settings.NETWORK_PROFILE == "sandbox":
+        curl_env.setdefault("http_proxy", "http://hatch-egress-proxy:3128")
+        curl_env.setdefault("https_proxy", "http://hatch-egress-proxy:3128")
+        curl_env.setdefault("HTTP_PROXY", "http://hatch-egress-proxy:3128")
+        curl_env.setdefault("HTTPS_PROXY", "http://hatch-egress-proxy:3128")
+    return curl_env
+
 
 class CurlRH(RequestHandler):
     RH_KEY = "Curl"
@@ -41,7 +53,7 @@ class CurlRH(RequestHandler):
         cmd.append(request.url)
 
         try:
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+            proc = subprocess.run(cmd, env=_get_curl_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
         except subprocess.TimeoutExpired as e:
             raise TransportError(f"Curl timed out: {e}") from e
 
@@ -80,6 +92,7 @@ class CurlRH(RequestHandler):
             raise HTTPError(res)
         return res
 
+
 class CurlAdapter(HTTPAdapter):
     def send(self, request, **kwargs):
         method = (request.method or "GET").upper()
@@ -101,7 +114,7 @@ class CurlAdapter(HTTPAdapter):
         cmd.append(request.url)
 
         try:
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+            proc = subprocess.run(cmd, env=_get_curl_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
         except subprocess.TimeoutExpired as e:
             raise requests.exceptions.Timeout(f"Curl timed out: {e}") from e
 
@@ -144,6 +157,7 @@ class CurlAdapter(HTTPAdapter):
         resp.request = request
         return resp
 
+
 def setup_network_profile(profile: str | None = None):
     if profile is None:
         profile = settings.NETWORK_PROFILE
@@ -153,4 +167,6 @@ def setup_network_profile(profile: str | None = None):
         except AssertionError:
             pass
         import gallery_dl.extractor.common
+
         gallery_dl.extractor.common._build_requests_adapter = lambda *a, **k: CurlAdapter()
+

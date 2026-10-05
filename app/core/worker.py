@@ -84,7 +84,7 @@ class WorkerService:
                     ext = os.path.splitext(fname)[1]
                     file_id_name = f"fl_{os.urandom(16).hex()}{ext}"
 
-                    dst_path = self.storage_mgr.commit_file_atomically(task_id, fname, file_id_name)
+                    dst_path = self.storage_mgr.commit_file_atomically(fpath, file_id_name)
                     mime, _ = mimetypes.guess_type(dst_path)
 
                     self.file_repo.create_file(
