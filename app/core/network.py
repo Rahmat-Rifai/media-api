@@ -127,7 +127,7 @@ class CurlRH(RequestHandler):
             cmd.extend(["-H", f"Cookie: {cookie_header}"])
         # Also keep --cookie for the non-tunneled (direct) path.
         if cookiefile:
-            cmd.extend(["--cookie", cookiefile, "--cookie-jar", cookiefile])
+            cmd.extend(["--cookie", cookiefile])  # NOTE: never use --cookie-jar here; it would overwrite the user's file
 
         body_bytes = None
         if getattr(request, "data", None):
@@ -220,7 +220,7 @@ class CurlAdapter(HTTPAdapter):
         if cookie_header:
             cmd.extend(["-H", f"Cookie: {cookie_header}"])
         if cookiefile:
-            cmd.extend(["--cookie", cookiefile, "--cookie-jar", cookiefile])
+            cmd.extend(["--cookie", cookiefile])  # NOTE: never use --cookie-jar here; it would overwrite the user's file
 
         body_bytes = None
         if getattr(request, "body", None):
