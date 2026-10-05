@@ -81,11 +81,13 @@ Setelah `extract_info` mengembalikan hasil, periksa tiga hal berikut. **Salah sa
 | `playlist_id == channel_id` | Itu halaman channel, bukan playlist |
 | `playlist_id` diawali `UC`, `UU`, `UL` | Channel, tab Uploads, atau Uploads otomatis |
 | `playlist_id` diawali `RD` tapi **bukan** `RDAM` / `RDCLAK` | Mix otomatis YouTube yang tak berujung |
-| nama extractor mengandung `User`, `Channel`, `Tab` | Halaman profil/tab |
+| nama extractor khusus profil pengguna (`InstagramUser`, `TikTokUser`, `TwitterUser`, `FacebookUser`, `SoundcloudUser`) | Halaman profil |
 
 Yang **lolos** (contoh): `PL…`, `OLAK5uy_…` (album YT Music), `RDAM…` (album), `RDCLAK…` (playlist YT Music), carousel Instagram, album Facebook.
 
 Koreksi atas temuan awal di lapangan: `RD` bukan penanda playlist — `RD<video_id>` adalah *mix* otomatis yang isinya bisa tak terbatas, justru harus ditolak. `RDAM` dan `RDCLAK` aman karena itu album/playlist nyata.
+
+> ⚠️ **Jangan sekali-kali menolak berdasarkan nama extractor `YoutubeTab`.** Extractor itu melayani playlist *dan* channel sekaligus — menolaknya berarti semua playlist YouTube ikut mati. Untuk YouTube, andalkan dua uji di atas (`playlist_id == channel_id` dan awalan ID).
 
 Kode galat tetap `unsupported_playlist` (kontrak tidak berubah), tapi **pesan** dibuat eksplisit, misalnya: *"Channel/profil tidak didukung. Hanya playlist, album, dan carousel yang bisa diunduh."*
 
@@ -200,23 +202,24 @@ Yang **tetap** punya masa berlaku (sesuai keputusan no. 1):
 | Setelan | Lama | Baru | Alasan |
 |---|---|---|---|
 | `STORAGE_MAX_BYTES` | 20 GB | **5 GB** | 🚨 lebih besar dari disk fisik 7,5 GB — sistem penjaga ruang mengira punya tempat 2,7× lebih banyak |
-| `TASK_MAX_DURATION_SECONDS` | 900 | **3600** | kumpulan besar butuh waktu |
+| `TASK_MAX_DURATION_SECONDS` | 900 | **900** (tetap) | URL tunggal |
+| `TASK_MAX_DURATION_COLLECTION_SECONDS` | — | **3600** (baru) | kumpulan besar butuh waktu |
 | `TASK_STALL_TIMEOUT_SECONDS` | 60 | **180** | jeda antar video lewat tunnel bisa panjang |
 | `DISK_MIN_FREE_BYTES` | — | **512 MB** (baru) | ambang berhenti per item |
 | `QUOTA_MIN_REMAINING_BYTES` | — | **64 MB** (baru) | ambang berhenti per item |
 | `MASTER_API_KEY` | — | `key_vGV-…` (baru) | kunci permanen |
 
-Untuk URL tunggal (bukan kumpulan), batas waktu tetap 15 menit — angka 3600 hanya berlaku bila `collection` terdeteksi.
+`TASK_MAX_DURATION_SECONDS` (15 menit) berlaku untuk URL tunggal; `TASK_MAX_DURATION_COLLECTION_SECONDS` (1 jam) dipakai hanya bila `collection` terdeteksi.
 
 ## 11. Penanganan galat
 
 | Kondisi | Kode | HTTP | Pesan (ringkas) |
 |---|---|---|---|
-| Channel/profil dikirim | `unsupported_playlist` | 400 | "Channel/profil tidak didkung. Hanya playlist, album, dan carousel." |
+| Channel/profil dikirim | `unsupported_playlist` | 400 | "Channel/profil tidak didukung. Hanya playlist, album, dan carousel." |
 | Mix otomatis `RD…` | `unsupported_playlist` | 400 | "Mix otomatis YouTube tidak didukung karena tidak berujung." |
 | Kumpulan dilewati sebagian | — | 200 | task `done` + `skipped[]` berisi alasannya |
-| Kuota harian habis | `daily_quota_exceeded` | — | dipakai sebagai alasan `skipped` |
-| Disk hampir penuh | `quota_exceeded` | — | dipakai sebagai alasan `skipped` |
+| Kuota harian habis | — | 200 | alasan `skipped[].reason` = `"daily_quota_exceeded"` |
+| Disk hampir penuh | — | 200 | alasan `skipped[].reason` = `"insufficient_disk"` |
 | Kedua mesin gagal untuk foto | `unsupported_platform` | 400 | seperti sekarang |
 
 Kode galat **tidak ada yang ditambah atau dihapus** dari `ErrorCode`, supaya kontrak konsumen tidak berubah. Yang berubah hanya pesannya.
@@ -225,7 +228,7 @@ Kode galat **tidak ada yang ditambah atau dihapus** dari `ErrorCode`, supaya kon
 
 | File | Yang dites |
 |---|---|
-| `tests/test_validator.py` | ±35 kasus URL nyata: tabel boleh/tolak per platform, sanitisasi tetap berjalan |
+| `tests/test_validator.py` (file baru) | ±35 kasus URL nyata: tabel boleh/tolak per platform, sanitisasi tetap berjalan |
 | `tests/test_engines.py` | kumpulan diterima; channel ditolak; `playlist_id == channel_id` ditolak; mix `RD` ditolak; `RDAM` lolos; foto → `kind=photo`; fallback ke gallery-dl |
 | `tests/test_worker.py` | kuota per item: item kelewat **tercatat**, task tetap `done`; nama file per item |
 | `tests/test_config_and_errors.py` | angka 5 GB / 3600 / 180 / 512 MB / 64 MB |
