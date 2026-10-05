@@ -65,7 +65,7 @@ class YtDlpEngine(MediaEngine):
             order.sort(key=lambda d: d["name"] != self._preferred_disguise)
         return order
 
-    def _get_ydl_opts(self, extra: dict = None, disguise: dict = None) -> dict:
+    def _get_ydl_opts(self, extra: dict = None, disguise: dict = None, url: str = "") -> dict:
         opts = {
             "quiet": True,
             "no_warnings": True,
@@ -77,6 +77,15 @@ class YtDlpEngine(MediaEngine):
         }
         if settings.NETWORK_PROFILE == "sandbox":
             opts["hls_prefer_native"] = True
+
+        # TikTok: use mobile User-Agent to avoid "universal data" extraction failure
+        # (desktop page structure changed; mobile page still works)
+        if "tiktok.com" in (url or "").lower():
+            opts["http_headers"] = {
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                              "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+                              "Mobile/15E148 Safari/604.1"
+            }
 
         if disguise:
             opts["extractor_args"] = {
@@ -152,7 +161,7 @@ class YtDlpEngine(MediaEngine):
     def extract_info(self, url: str) -> dict:
         errors = []
         for disguise in self._disguise_sequence(url):
-            opts = self._get_ydl_opts({"extract_flat": False}, disguise)
+            opts = self._get_ydl_opts({"extract_flat": False}, disguise, url)
             ydl = self._create_ydl(opts)
             try:
                 info = ydl.extract_info(url, download=False)
@@ -187,7 +196,7 @@ class YtDlpEngine(MediaEngine):
         elif format_id:
             extra_opts["format"] = format_id
 
-        ydl = self._create_ydl(self._get_ydl_opts(extra_opts, disguise))
+        ydl = self._create_ydl(self._get_ydl_opts(extra_opts, disguise, url))
         try:
             ydl.extract_info(url, download=True)
         except MaxDownloadsReached:
