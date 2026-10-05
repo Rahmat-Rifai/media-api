@@ -21,6 +21,9 @@ YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
 # Profil dicoba satu per satu sampai ada yang tembus, lalu profil yang berhasil
 # diingat agar permintaan berikutnya tidak mencoba dari awal lagi.
 YOUTUBE_DISGUISES = [
+    # Skip web player: langsung ke API, lewati halaman web yang kena bot-check
+    {"name": "api_android", "player_client": ["android"], "skip_webpage": True},
+    {"name": "api_tv", "player_client": ["tv"], "skip_webpage": True},
     {"name": "android_vr", "player_client": ["android_vr"]},
     {"name": "tv", "player_client": ["tv"]},
     {"name": "tv_simply", "player_client": ["tv_simply"]},
@@ -88,9 +91,11 @@ class YtDlpEngine(MediaEngine):
             }
 
         if disguise:
-            opts["extractor_args"] = {
-                "youtube": {"player_client": list(disguise["player_client"])}
-            }
+            yt_args = {"player_client": list(disguise["player_client"])}
+            # Skip web player download; go straight to API (bypasses some bot checks)
+            if disguise.get("skip_webpage"):
+                yt_args["player_skip"] = ["webpage"]
+            opts["extractor_args"] = {"youtube": yt_args}
 
         # Jalan keluar terakhir kalau YouTube tetap bandel: cookie akun YouTube
         # yang sah bisa disimpan di file dan disebut lewat YT_COOKIES_FILE.

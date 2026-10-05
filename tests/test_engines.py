@@ -67,7 +67,8 @@ class TestEngines(unittest.TestCase):
         engine = YtDlpEngine()
         engine.extract_info("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         opts = mock_ydl_cls.call_args[0][0]
-        self.assertEqual(opts["extractor_args"]["youtube"]["player_client"], ["android_vr"])
+        # First disguise is now api_android (skip_webpage variant)
+        self.assertEqual(opts["extractor_args"]["youtube"]["player_client"], ["android"])
 
     @patch("yt_dlp.YoutubeDL")
     def test_youtube_retries_next_disguise_on_bot_check(self, mock_ydl_cls):
