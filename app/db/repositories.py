@@ -128,8 +128,8 @@ class FileRepository:
     def list_evictable_files(self, grace_period_seconds: int) -> List[Dict[str, Any]]:
         cur = self.conn.execute(
             """SELECT * FROM files
-               WHERE (strftime('%s', 'now') - strftime('%s', last_accessed_at)) > ?
-                  OR strftime('%s', expires_at) <= strftime('%s', 'now')
+               WHERE (unixepoch() - unixepoch(last_accessed_at)) > ?
+                  OR unixepoch(expires_at) <= unixepoch()
                ORDER BY last_accessed_at ASC""",
             (grace_period_seconds,)
         )
