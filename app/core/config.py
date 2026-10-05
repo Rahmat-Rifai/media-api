@@ -3,7 +3,7 @@ from pydantic import Field
 from typing import List
 
 class Settings(BaseSettings):
-    NETWORK_PROFILE: str = Field(default="sandbox")
+    NETWORK_PROFILE: str = Field(default="standard")
     DATA_PATH: str = Field(default="data")
     STORAGE_PATH: str = Field(default="storage")
     STORAGE_MAX_BYTES: int = Field(default=20 * 1024 * 1024 * 1024)
@@ -21,7 +21,15 @@ class Settings(BaseSettings):
     ALLOWLIST_DOMAINS: List[str] = Field(default=[
         "soundcloud.com",
         "commons.wikimedia.org",
-        "upload.wikimedia.org"
+        "upload.wikimedia.org",
+        "youtube.com",
+        "youtu.be",
+        "instagram.com",
+        "tiktok.com",
+        "twitter.com",
+        "x.com",
+        "facebook.com",
+        "fb.watch",
     ])
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
