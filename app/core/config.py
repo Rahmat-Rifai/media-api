@@ -5,6 +5,7 @@ from typing import List
 class Settings(BaseSettings):
     NETWORK_PROFILE: str = Field(default="sandbox")
     UPSTREAM_PROXY_URL: str = Field(default="https://proxy.rahmat.cc.cd/proxy")
+    YT_COOKIES_FILE: str = Field(default="")
     DATA_PATH: str = Field(default="data")
     STORAGE_PATH: str = Field(default="storage")
     STORAGE_MAX_BYTES: int = Field(default=20 * 1024 * 1024 * 1024)
