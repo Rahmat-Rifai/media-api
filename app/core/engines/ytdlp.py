@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: 05d1b4f3f808f7f9d31d42a62cfb9c9681227522)
 import os
 
 import yt_dlp
@@ -25,6 +26,8 @@ YOUTUBE_DISGUISES = [
     {"name": "tv", "player_client": ["tv"]},
     {"name": "tv_simply", "player_client": ["tv_simply"]},
     {"name": "web_embedded", "player_client": ["web_embedded"]},
+    {"name": "web_safari", "player_client": ["web_safari"]},
+    {"name": "web", "player_client": ["web"]},
     {"name": "mweb", "player_client": ["mweb"]},
     {"name": "default", "player_client": ["default"]},
 ]
