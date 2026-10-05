@@ -47,11 +47,38 @@ def _build_proxy_target(target_url: str, method: str, body_bytes: bytes | None) 
     return proxy_url, headers_to_add
 
 
-def _load_cookie_header() -> str:
+# Map target domains to their cookie-file setting names.
+# Used to select the right cookies per request instead of blasting all
+# cookies to every domain.
+_COOKIE_FILE_BY_DOMAIN = (
+    (("youtube.com", "youtu.be", "youtube-nocookie.com"), "YT_COOKIES_FILE"),
+    (("facebook.com", "fb.watch", "fb.com"), "FB_COOKIES_FILE"),
+    (("instagram.com",), "IG_COOKIES_FILE"),
+    (("twitter.com", "x.com", "t.co"), "X_COOKIES_FILE"),
+    (("tiktok.com",), "TT_COOKIES_FILE"),
+)
+
+
+def _cookie_file_for_url(url: str) -> str:
+    """Return the configured cookie file path for the target domain, or ''."""
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+    for domains, setting_name in _COOKIE_FILE_BY_DOMAIN:
+        if any(host == d or host.endswith("." + d) for d in domains):
+            path = (getattr(settings, setting_name, "") or "").strip()
+            if path and os.path.isfile(path):
+                return path
+    return ""
+
+
+def _load_cookie_header(cookiefile: str) -> str:
     """Parse Netscape cookie file into a Cookie header value.
-    Needed because curl won't send youtube.com cookies to the Worker domain,
-    but the Worker forwards headers to YouTube — so inject them manually."""
-    cookiefile = (getattr(settings, "YT_COOKIES_FILE", "") or "").strip()
+    Needed because curl won't send e.g. youtube.com cookies to the Worker domain,
+    but the Worker forwards headers to the target — so inject them manually.
+    cookiefile comes from _cookie_file_for_url(); empty means no cookies
+    configured for this domain (do NOT fall back to another platform's file)."""
     if not cookiefile or not os.path.isfile(cookiefile):
         return ""
     pairs = []
@@ -90,15 +117,16 @@ class CurlRH(RequestHandler):
 
         # yt-dlp's cookiejar never reaches this handler as a Cookie header
         # (it bypasses urllib). Inject cookies manually: curl won't send
-        # youtube.com cookies to the Worker domain, but the Worker forwards
-        # headers to YouTube, so a Cookie header flows through.
-        # Without this, YT_COOKIES_FILE is silently ignored on the tunneled path.
-        cookie_header = _load_cookie_header()
+        # target-domain cookies to the Worker domain, but the Worker forwards
+        # headers to the target, so a Cookie header flows through.
+        # Without this, *_COOKIES_FILE is silently ignored on the tunneled path.
+        # Cookies are selected per target domain (request.url is pre-proxy).
+        cookiefile = _cookie_file_for_url(request.url)
+        cookie_header = _load_cookie_header(cookiefile)
         if cookie_header:
             cmd.extend(["-H", f"Cookie: {cookie_header}"])
         # Also keep --cookie for the non-tunneled (direct) path.
-        cookiefile = (getattr(settings, "YT_COOKIES_FILE", "") or "").strip()
-        if cookiefile and os.path.isfile(cookiefile):
+        if cookiefile:
             cmd.extend(["--cookie", cookiefile, "--cookie-jar", cookiefile])
 
         body_bytes = None
@@ -185,9 +213,13 @@ class CurlAdapter(HTTPAdapter):
 
         cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "15", "--max-time", "60"]
 
-        # same cookie fix as CurlRH: requests' cookie jar never reaches curl
-        cookiefile = (getattr(settings, "YT_COOKIES_FILE", "") or "").strip()
-        if cookiefile and os.path.isfile(cookiefile):
+        # same cookie fix as CurlRH: requests' cookie jar never reaches curl.
+        # Select per target domain and inject as Cookie header for the tunneled path.
+        cookiefile = _cookie_file_for_url(request.url)
+        cookie_header = _load_cookie_header(cookiefile)
+        if cookie_header:
+            cmd.extend(["-H", f"Cookie: {cookie_header}"])
+        if cookiefile:
             cmd.extend(["--cookie", cookiefile, "--cookie-jar", cookiefile])
 
         body_bytes = None
