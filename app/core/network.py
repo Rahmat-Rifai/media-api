@@ -47,6 +47,28 @@ def _build_proxy_target(target_url: str, method: str, body_bytes: bytes | None) 
     return proxy_url, headers_to_add
 
 
+def _load_cookie_header() -> str:
+    """Parse Netscape cookie file into a Cookie header value.
+    Needed because curl won't send youtube.com cookies to the Worker domain,
+    but the Worker forwards headers to YouTube — so inject them manually."""
+    cookiefile = (getattr(settings, "YT_COOKIES_FILE", "") or "").strip()
+    if not cookiefile or not os.path.isfile(cookiefile):
+        return ""
+    pairs = []
+    try:
+        with open(cookiefile, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) >= 7:
+                    pairs.append(f"{parts[5]}={parts[6]}")
+    except OSError:
+        return ""
+    return "; ".join(pairs)
+
+
 class CurlRH(RequestHandler):
     RH_KEY = "Curl"
     RH_NAME = "curl"
@@ -65,6 +87,19 @@ class CurlRH(RequestHandler):
             raise TransportError(f"Egress POST blocked by policy: {method}")
 
         cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "15", "--max-time", "60"]
+
+        # yt-dlp's cookiejar never reaches this handler as a Cookie header
+        # (it bypasses urllib). Inject cookies manually: curl won't send
+        # youtube.com cookies to the Worker domain, but the Worker forwards
+        # headers to YouTube, so a Cookie header flows through.
+        # Without this, YT_COOKIES_FILE is silently ignored on the tunneled path.
+        cookie_header = _load_cookie_header()
+        if cookie_header:
+            cmd.extend(["-H", f"Cookie: {cookie_header}"])
+        # Also keep --cookie for the non-tunneled (direct) path.
+        cookiefile = (getattr(settings, "YT_COOKIES_FILE", "") or "").strip()
+        if cookiefile and os.path.isfile(cookiefile):
+            cmd.extend(["--cookie", cookiefile, "--cookie-jar", cookiefile])
 
         body_bytes = None
         if getattr(request, "data", None):
@@ -149,6 +184,11 @@ class CurlAdapter(HTTPAdapter):
             raise requests.exceptions.RequestException(f"Egress POST blocked by policy: {method}")
 
         cmd = ["/usr/bin/curl", "-s", "-i", "-L", "--connect-timeout", "15", "--max-time", "60"]
+
+        # same cookie fix as CurlRH: requests' cookie jar never reaches curl
+        cookiefile = (getattr(settings, "YT_COOKIES_FILE", "") or "").strip()
+        if cookiefile and os.path.isfile(cookiefile):
+            cmd.extend(["--cookie", cookiefile, "--cookie-jar", cookiefile])
 
         body_bytes = None
         if getattr(request, "body", None):
