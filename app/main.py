@@ -1,3 +1,4 @@
+import hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -22,6 +23,18 @@ async def lifespan(app: FastAPI):
     conn = get_db_connection()
     task_repo = TaskRepository(conn)
     task_repo.reset_running_tasks_on_startup()
+
+    # Auto-seed default master client if not present
+    client_repo = ClientRepository(conn)
+    master_key = "key_vGV-CNOBdgm-7B6NL3NxGY-5vlQbmUutJYg1SPS0UQ8"
+    master_hash = hashlib.sha256(master_key.encode()).hexdigest()
+    if not client_repo.get_by_api_key_hash(master_hash):
+        client_repo.create_client(
+            name="master",
+            api_key_hash=master_hash,
+            daily_bytes_quota=100 * 1024 * 1024 * 1024 * 1024,
+            concurrency_limit=50,
+        )
     conn.close()
 
     storage_mgr = StorageManager()
@@ -57,4 +70,3 @@ app.include_router(extract_router, prefix="/v1")
 app.include_router(tasks_router, prefix="/v1")
 app.include_router(files_router, prefix="/v1")
 app.include_router(admin_router, prefix="/v1")
-
